@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>郵便番号 → 住所 → ホテル検索</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #eef0f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+      color: #222;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 24px auto;
+      background: #f7f7f8;
+      border-radius: 24px;
+      padding: 36px;
+    }
+    h1 {
+      margin: 0 0 28px;
+      font-size: 64px;
+      line-height: 1.1;
+      font-weight: 800;
+    }
+    .search-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+    }
+    input {
+      flex: 1;
+      min-width: 260px;
+      font-size: 28px;
+      padding: 18px 20px;
+      border: 2px solid #8a8a8a;
+      border-radius: 10px;
+      background: #fff;
+    }
+    button {
+      font-size: 28px;
+      padding: 18px 30px;
+      border: 3px solid #1565d8;
+      background: #fff;
+      color: #111;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #f3f8ff;
+    }
+    .section-title {
+      font-size: 32px;
+      font-weight: 800;
+      margin: 28px 0 12px;
+    }
+    .coords {
+      font-size: 24px;
+      line-height: 1.9;
+      margin-bottom: 18px;
+    }
+    .message {
+      font-size: 22px;
+      line-height: 1.8;
+      margin: 10px 0;
+    }
+    .error {
+      color: #d32f2f;
+      font-weight: 700;
+    }
+    .debug {
+      margin-top: 16px;
+      padding: 14px;
+      background: #fff8e1;
+      border: 1px solid #f0d78c;
+      border-radius: 10px;
+      white-space: pre-wrap;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    .hotel-list {
+      margin-top: 26px;
+    }
+    .hotel-card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      padding: 18px;
+      margin-top: 14px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+    }
+    .hotel-name {
+      font-size: 24px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .hotel-meta {
+      font-size: 18px;
+      line-height: 1.8;
+    }
+    .hotel-image {
+      width: 100%;
+      max-width: 260px;
+      border-radius: 10px;
+      display: block;
+      margin: 12px 0;
+    }
+    a {
+      color: #1565d8;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    @media (max-width: 768px) {
+      .container {
+        padding: 22px;
+      }
+      h1 {
+        font-size: 40px;
+      }
+      input,
+      button {
+        font-size: 22px;
+      }
+      .section-title {
+        font-size: 26px;
+      }
+      .coords,
+      .message {
+        font-size: 20px;
+      }
+      .hotel-name {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>郵便番号 → 住所 → ホテル検索</h1>
+    <div class="search-row">
+      <input id="zipcode" type="text" placeholder="例: 1000014" maxlength="8">
+      <button id="searchBtn">検索</button>
+    </div>
+    <div id="result"></div>
+  </div>
+  <script>
+    const APPLICATION_ID = "ここに楽天のApplication ID";
+    const ACCESS_KEY = "ここに楽天のAccess Key";
+    const zipcodeInput = document.getElementById("zipcode");
+    const searchBtn = document.getElementById("searchBtn");
+    const result = document.getElementById("result");
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+    function render(html) {
+      result.innerHTML = html;
+    }
+    async function searchHotels() {
+      const zip = zipcodeInput.value.trim().replace(/-/g, "");
+      if (!/^\d{7}$/.test(zip)) {
+        render('<p class="message error">郵便番号は7桁で入力してください。</p>');
+        return;
+      }
+      if (
+        APPLICATION_ID.includes("af82f08e-acb3-4d01-840a-c931614c53ad") ||
+        ACCESS_KEY.includes("pk_NGMXOkIpdvzvVbP1b9dIwzRNXvKEvkIVVeaRCMDJcup")
+      ) {
+        render('<p class="message error">楽天の Application ID と Access Key を入力してください。</p>');
+        return;
+      }
+      try {
+        render('<p class="message">住所を検索中...</p>');
+        // 1. 郵便番号 → 住所
+        const zipRes = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`);
+        const zipData = await zipRes.json();
+        if (!zipData.results || zipData.results.length === 0) {
+          render('<p class="message error">住所が見つかりませんでした。</p>');
+          return;
+        }
+        const addr = zipData.results[0];
+        const address = `${addr.address1}${addr.address2}${addr.address3}`;
+        render(`
+          <div class="section-title">${escapeHtml(address)}</div>
+          <p class="message">緯度経度を取得中...</p>
+        `);
+        // 2. 住所 → 緯度経度（国土地理院）
+        const geoRes = await fetch(
+          `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(address)}`
+        );
+        const geoData = await geoRes.json();
+        if (!Array.isArray(geoData) || geoData.length === 0) {
+          render(`
+            <div class="section-title">${escapeHtml(address)}</div>
+            <p class="message error">緯度経度を取得できませんでした。</p>
+          `);
+          return;
+        }
+        // 国土地理院は [経度, 緯度]
+        const longitude = geoData[0].geometry.coordinates[0];
+        const latitude = geoData[0].geometry.coordinates[1];
+        render(`
+          <div class="section-title">${escapeHtml(address)}</div>
+          <div class="coords">
+            <div><b>緯度：</b>${latitude}</div>
+            <div><b>経度：</b>${longitude}</div>
+          </div>
+          <p class="message">ホテルを検索中...</p>
+        `);
+        // 3. 緯度経度 → 楽天トラベル施設検索
+        const params = new URLSearchParams({
+          applicationId: APPLICATION_ID,
+          accessKey: ACCESS_KEY,
+          format: "json",
+          datumType: "1",
+          latitude: String(latitude),
+          longitude: String(longitude),
+          searchRadius: "3.0",
+          hits: "10",
+          responseType: "middle"
+        });
+        const hotelUrl = `https://openapi.rakuten.co.jp/engine/api/Travel/SimpleHotelSearch/20170426?${params.toString()}`;
+        const hotelRes = await fetch(hotelUrl);
+        const hotelData = await hotelRes.json();
+        // エラー表示
+        if (hotelData.errors) {
+          render(`
+            <div class="section-title">${escapeHtml(address)}</div>
+            <div class="coords">
+              <div><b>緯度：</b>${latitude}</div>
+              <div><b>経度：</b>${longitude}</div>
+            </div>
+            <p class="message error">楽天APIでエラーが発生しました。</p>
+            <div class="debug">${escapeHtml(JSON.stringify(hotelData, null, 2))}</div>
+          `);
+          return;
+        }
+        const hotels = hotelData.hotels;
+        if (!Array.isArray(hotels) || hotels.length === 0) {
+          render(`
+            <div class="section-title">${escapeHtml(address)}</div>
+            <div class="coords">
+              <div><b>緯度：</b>${latitude}</div>
+              <div><b>経度：</b>${longitude}</div>
+            </div>
+            <p class="message error">ホテルが見つかりませんでした。</p>
+            <div class="debug">${escapeHtml(JSON.stringify(hotelData, null, 2))}</div>
+          `);
+          return;
+        }
+        let html = `
+          <div class="section-title">${escapeHtml(address)}</div>
+          <div class="coords">
+            <div><b>緯度：</b>${latitude}</div>
+            <div><b>経度：</b>${longitude}</div>
+          </div>
+          <div class="section-title">近くのホテル</div>
+          <div class="hotel-list">
+        `;
+        hotels.forEach((item) => {
+          const basic = item.hotel[0].hotelBasicInfo;
+          const name = basic.hotelName || "名称なし";
+          const addressText = `${basic.address1 || ""}${basic.address2 || ""}`;
+          const minCharge = basic.hotelMinCharge
+            ? `${Number(basic.hotelMinCharge).toLocaleString()}円〜`
+            : "情報なし";
+          const reviewAverage = basic.reviewAverage || "評価なし";
+          const access = basic.access || "情報なし";
+          const infoUrl = basic.hotelInformationUrl || "#";
+          const thumb = basic.hotelThumbnailUrl || basic.hotelImageUrl || "";
+          html += `
+            <div class="hotel-card">
+              <div class="hotel-name">${escapeHtml(name)}</div>
+              ${thumb ? `<img class="hotel-image" src="${thumb}" alt="${escapeHtml(name)}">` : ""}
+              <div class="hotel-meta">
+                <div><b>住所：</b>${escapeHtml(addressText)}</div>
+                <div><b>最安料金：</b>${escapeHtml(minCharge)}</div>
+                <div><b>評価：</b>${escapeHtml(reviewAverage)}</div>
+                <div><b>アクセス：</b>${escapeHtml(access)}</div>
+                <div><a href="${infoUrl}" target="_blank" rel="noopener noreferrer">詳細を見る</a></div>
+              </div>
+            </div>
+          `;
+        });
+        html += `</div>`;
+        render(html);
+      } catch (error) {
+        console.error(error);
+        render(`
+          <p class="message error">通信エラーが発生しました。</p>
+          <div class="debug">${escapeHtml(String(error))}</div>
+        `);
+      }
+    }
+    searchBtn.addEventListener("click", searchHotels);
+    zipcodeInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        searchHotels();
+      }
+    });
+  </script>
+</body>
+</html>
+
+      border-radius: 10px;
+      background: #fff;
+    }
+
+     button {
+      font-size: 28px;
+      padding: 18px 30px;
+      border: 3px solid #1565d8;
+      background: #fff;
+      color: #111;
+      border-radius: 12px;
+      cursor: pointer;
